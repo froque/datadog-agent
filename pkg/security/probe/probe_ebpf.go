@@ -1580,6 +1580,10 @@ func (p *EBPFProbe) handleRegularEvent(event *model.Event, offset int, dataLen u
 		if err := p.Resolvers.ProcessResolver.AddTracerMetadata(event.PIDContext.Pid, event); err != nil {
 			seclog.Debugf("failed to add tracer metadata: %s (pid %d, fd %d)", err, event.PIDContext.Pid, event.TracerMemfdSeal.Fd)
 		}
+		// Second handle for exec event because the context is required to detect a ssh session
+	case model.ExecEventType:
+		p.HandleSSHUserSession(event)
+
 	}
 	return true
 }
