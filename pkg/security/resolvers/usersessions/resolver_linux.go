@@ -53,6 +53,17 @@ func (e *UserSessionData) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
+// IncrementalFileReader is used to read a file incrementally
+type IncrementalFileReader struct {
+	path         string
+	f            *os.File
+	offset       int64
+	mu           sync.Mutex
+	startAtEnd   bool // if true, start at the end of the file
+	followRotate bool // if true, follow inode rotation
+	ino          uint64
+}
+
 // Resolver is used to resolve the user sessions context
 type Resolver struct {
 	sync.RWMutex
@@ -244,7 +255,6 @@ func (r *Resolver) ResolveSSHUserSession(ctx *model.UserSessionContext) *model.U
 	defer r.Unlock()
 
 	f, err := os.OpenFile("/var/log/auth.log", os.O_RDONLY, 0644)
-	defer f.Close()
 	if err != nil {
 		// Fallback for Red Hat / CentOS / Fedora
 		f, err = os.OpenFile("/var/log/secure", os.O_RDONLY, 0644)
@@ -261,6 +271,7 @@ func (r *Resolver) ResolveSSHUserSession(ctx *model.UserSessionContext) *model.U
 			}
 		}
 	}
+	defer f.Close()
 
 	var lines []string
 	sc := bufio.NewScanner(f)
