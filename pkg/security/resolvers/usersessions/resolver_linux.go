@@ -57,12 +57,11 @@ func (e *UserSessionData) UnmarshalBinary(data []byte) error {
 
 // IncrementalFileReader is used to read a file incrementally
 type IncrementalFileReader struct {
-	path         string
-	f            *os.File
-	offset       int64
-	mu           sync.Mutex
-	followRotate bool // if true, follow inode rotation
-	ino          uint64
+	path   string
+	f      *os.File
+	offset int64
+	mu     sync.Mutex
+	ino    uint64
 }
 
 // Resolver is used to resolve the user sessions context
@@ -153,7 +152,7 @@ func (r *Resolver) ResolveUserSession(id uint64) *model.UserSessionContext {
 }
 
 // NewIncrementalFileReader creates a new IncrementalFileReader
-func NewIncrementalFileReader(path string, startAtEnd, followRotate bool) *IncrementalFileReader {
+func NewIncrementalFileReader(path string) *IncrementalFileReader {
 	return &IncrementalFileReader{
 		path: path,
 	}
@@ -171,7 +170,7 @@ func (r *IncrementalFileReader) Init(f *os.File) error {
 	st, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		fmt.Print("Fail and close init")
+		seclog.Warnf("Fail to stat log file: %v", err)
 		return err
 	}
 
@@ -214,7 +213,6 @@ func (r *IncrementalFileReader) reloadIfRotated() error {
 	}
 	curIno := inodeOf(curSt)
 	if curIno != 0 && r.ino != 0 && curIno != r.ino {
-		fmt.Printf("The inodes are different: %d != %d\n", curIno, r.ino)
 		// The file has been rotated
 		if r.f != nil {
 			_ = r.close()
@@ -281,24 +279,23 @@ func (r *IncrementalFileReader) ReadNewLines() ([]string, error) {
 
 // StartSSHUserSessionResolver initializes the ssh log reader by looking for the available file, opening it and setting up the initial offset
 func (r *Resolver) StartSSHUserSessionResolver() {
-	// first, find the available file
-	path := "/var/log/auth.log"
-	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
-	if err != nil {
-		// Fallback for Red Hat / CentOS / Fedora
-		path = "/var/log/secure"
-		f, err = os.OpenFile(path, os.O_RDONLY, 0644)
-		if err != nil {
-			// Last Fallback for openSUSE
-			path = "/var/log/messages"
-			f, err = os.OpenFile(path, os.O_RDONLY, 0644)
-			if err != nil {
-				path = ""
-				// We will ignore the ssh log and fallback in journalctl
-			}
+	possibleLogPaths := []string{
+		"/var/log/auth.log", // Debian/Ubuntu
+		"/var/log/secure",   // RHEL/CentOS/Fedora
+		"/var/log/messages", // openSUSE/autres
+	}
+	path := ""
+	var err error
+	var f *os.File
+	for _, possiblePath := range possibleLogPaths {
+		f, err = os.OpenFile(possiblePath, os.O_RDONLY, 0644)
+		if err == nil {
+			path = possiblePath
+			break
 		}
 	}
-	r.sshLogReader = NewIncrementalFileReader(path, true, true)
+
+	r.sshLogReader = NewIncrementalFileReader(path)
 	if path == "" {
 		return
 	}
@@ -420,7 +417,6 @@ func (r *Resolver) ResolveSSHUserSession(ctx *model.UserSessionContext) *model.U
 	}
 
 	r.Lock()
-	fmt.Printf("We try to resolve session with Port %d\n", ctx.SSHPort)
 	defer r.Unlock()
 	if r.sshLogReader.path == "" {
 		resolveFromJournalctl(ctx)
