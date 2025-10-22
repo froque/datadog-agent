@@ -2158,7 +2158,6 @@ func (p *EBPFProbe) Close() error {
 
 	// when we reach this point, we do not generate nor consume events anymore, we can close the resolvers
 	close(p.tcRequests)
-
 	return p.Resolvers.Close()
 }
 

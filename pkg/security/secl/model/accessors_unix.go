@@ -3443,10 +3443,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Exec.Process.UserSession)
+				return ev.Exec.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "exec.user_session.ssh_client_ip":
@@ -3476,10 +3476,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Exec.Process.UserSession)
+				return ev.Exec.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "exit.args":
@@ -4756,10 +4756,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Exit.Process.UserSession)
+				return ev.Exit.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "exit.user_session.ssh_client_ip":
@@ -4789,10 +4789,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Exit.Process.UserSession)
+				return ev.Exit.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "imds.aws.is_imds_v2":
@@ -10921,14 +10921,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &element.ProcessContext.Process.UserSession))
+					result := int(element.ProcessContext.Process.UserSession.SSHAuthMethod)
 					return []int{result}
 				}
 				if result, ok := ctx.IntCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "BaseEvent.ProcessContext.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) int {
-					return int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &current.ProcessContext.Process.UserSession))
+				results := newIterator(iterator, "BaseEvent.ProcessContext.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) int {
+					return int(current.ProcessContext.Process.UserSession.SSHAuthMethod)
 				})
 				ctx.IntCache[field] = results
 				return results
@@ -11002,14 +11002,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := ev.FieldHandlers.ResolveSSHPublicKey(ev, &element.ProcessContext.Process.UserSession)
+					result := element.ProcessContext.Process.UserSession.SSHPublicKey
 					return []string{result}
 				}
 				if result, ok := ctx.StringCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "BaseEvent.ProcessContext.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) string {
-					return ev.FieldHandlers.ResolveSSHPublicKey(ev, &current.ProcessContext.Process.UserSession)
+				results := newIterator(iterator, "BaseEvent.ProcessContext.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) string {
+					return current.ProcessContext.Process.UserSession.SSHPublicKey
 				})
 				ctx.StringCache[field] = results
 				return results
@@ -13684,10 +13684,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.BaseEvent.ProcessContext.HasParent() {
 					return 0
 				}
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.BaseEvent.ProcessContext.Parent.UserSession)
+				return ev.BaseEvent.ProcessContext.Parent.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "process.parent.user_session.ssh_client_ip":
@@ -13726,10 +13726,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.BaseEvent.ProcessContext.HasParent() {
 					return ""
 				}
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.BaseEvent.ProcessContext.Parent.UserSession)
+				return ev.BaseEvent.ProcessContext.Parent.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "process.pid":
@@ -13858,10 +13858,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.BaseEvent.ProcessContext.Process.UserSession)
+				return ev.BaseEvent.ProcessContext.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "process.user_session.ssh_client_ip":
@@ -13891,10 +13891,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.BaseEvent.ProcessContext.Process.UserSession)
+				return ev.BaseEvent.ProcessContext.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "ptrace.request":
@@ -16922,14 +16922,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &element.ProcessContext.Process.UserSession))
+					result := int(element.ProcessContext.Process.UserSession.SSHAuthMethod)
 					return []int{result}
 				}
 				if result, ok := ctx.IntCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "PTrace.Tracee.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) int {
-					return int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &current.ProcessContext.Process.UserSession))
+				results := newIterator(iterator, "PTrace.Tracee.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) int {
+					return int(current.ProcessContext.Process.UserSession.SSHAuthMethod)
 				})
 				ctx.IntCache[field] = results
 				return results
@@ -17003,14 +17003,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := ev.FieldHandlers.ResolveSSHPublicKey(ev, &element.ProcessContext.Process.UserSession)
+					result := element.ProcessContext.Process.UserSession.SSHPublicKey
 					return []string{result}
 				}
 				if result, ok := ctx.StringCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "PTrace.Tracee.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) string {
-					return ev.FieldHandlers.ResolveSSHPublicKey(ev, &current.ProcessContext.Process.UserSession)
+				results := newIterator(iterator, "PTrace.Tracee.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) string {
+					return current.ProcessContext.Process.UserSession.SSHPublicKey
 				})
 				ctx.StringCache[field] = results
 				return results
@@ -19685,10 +19685,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.PTrace.Tracee.HasParent() {
 					return 0
 				}
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.PTrace.Tracee.Parent.UserSession)
+				return ev.PTrace.Tracee.Parent.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "ptrace.tracee.parent.user_session.ssh_client_ip":
@@ -19727,10 +19727,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.PTrace.Tracee.HasParent() {
 					return ""
 				}
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.PTrace.Tracee.Parent.UserSession)
+				return ev.PTrace.Tracee.Parent.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "ptrace.tracee.pid":
@@ -19859,10 +19859,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.PTrace.Tracee.Process.UserSession)
+				return ev.PTrace.Tracee.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "ptrace.tracee.user_session.ssh_client_ip":
@@ -19892,10 +19892,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.PTrace.Tracee.Process.UserSession)
+				return ev.PTrace.Tracee.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "removexattr.file.change_time":
@@ -24347,14 +24347,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &element.ProcessContext.Process.UserSession))
+					result := int(element.ProcessContext.Process.UserSession.SSHAuthMethod)
 					return []int{result}
 				}
 				if result, ok := ctx.IntCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "Setrlimit.Target.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) int {
-					return int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &current.ProcessContext.Process.UserSession))
+				results := newIterator(iterator, "Setrlimit.Target.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) int {
+					return int(current.ProcessContext.Process.UserSession.SSHAuthMethod)
 				})
 				ctx.IntCache[field] = results
 				return results
@@ -24428,14 +24428,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := ev.FieldHandlers.ResolveSSHPublicKey(ev, &element.ProcessContext.Process.UserSession)
+					result := element.ProcessContext.Process.UserSession.SSHPublicKey
 					return []string{result}
 				}
 				if result, ok := ctx.StringCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "Setrlimit.Target.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) string {
-					return ev.FieldHandlers.ResolveSSHPublicKey(ev, &current.ProcessContext.Process.UserSession)
+				results := newIterator(iterator, "Setrlimit.Target.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) string {
+					return current.ProcessContext.Process.UserSession.SSHPublicKey
 				})
 				ctx.StringCache[field] = results
 				return results
@@ -27110,10 +27110,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.Setrlimit.Target.HasParent() {
 					return 0
 				}
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Setrlimit.Target.Parent.UserSession)
+				return ev.Setrlimit.Target.Parent.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "setrlimit.target.parent.user_session.ssh_client_ip":
@@ -27152,10 +27152,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.Setrlimit.Target.HasParent() {
 					return ""
 				}
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Setrlimit.Target.Parent.UserSession)
+				return ev.Setrlimit.Target.Parent.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "setrlimit.target.pid":
@@ -27284,10 +27284,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Setrlimit.Target.Process.UserSession)
+				return ev.Setrlimit.Target.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "setrlimit.target.user_session.ssh_client_ip":
@@ -27317,10 +27317,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Setrlimit.Target.Process.UserSession)
+				return ev.Setrlimit.Target.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "setsockopt.filter_hash":
@@ -30869,14 +30869,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &element.ProcessContext.Process.UserSession))
+					result := int(element.ProcessContext.Process.UserSession.SSHAuthMethod)
 					return []int{result}
 				}
 				if result, ok := ctx.IntCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "Signal.Target.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) int {
-					return int(ev.FieldHandlers.ResolveSSHAuthMethod(ev, &current.ProcessContext.Process.UserSession))
+				results := newIterator(iterator, "Signal.Target.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) int {
+					return int(current.ProcessContext.Process.UserSession.SSHAuthMethod)
 				})
 				ctx.IntCache[field] = results
 				return results
@@ -30950,14 +30950,14 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 					if element == nil {
 						return nil
 					}
-					result := ev.FieldHandlers.ResolveSSHPublicKey(ev, &element.ProcessContext.Process.UserSession)
+					result := element.ProcessContext.Process.UserSession.SSHPublicKey
 					return []string{result}
 				}
 				if result, ok := ctx.StringCache[field]; ok {
 					return result
 				}
-				results := newIterator(iterator, "Signal.Target.Ancestor", ctx, ev, func(ev *Event, current *ProcessCacheEntry) string {
-					return ev.FieldHandlers.ResolveSSHPublicKey(ev, &current.ProcessContext.Process.UserSession)
+				results := newIterator(iterator, "Signal.Target.Ancestor", ctx, nil, func(ev *Event, current *ProcessCacheEntry) string {
+					return current.ProcessContext.Process.UserSession.SSHPublicKey
 				})
 				ctx.StringCache[field] = results
 				return results
@@ -33632,10 +33632,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.Signal.Target.HasParent() {
 					return 0
 				}
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Signal.Target.Parent.UserSession)
+				return ev.Signal.Target.Parent.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "signal.target.parent.user_session.ssh_client_ip":
@@ -33674,10 +33674,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 				if !ev.Signal.Target.HasParent() {
 					return ""
 				}
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Signal.Target.Parent.UserSession)
+				return ev.Signal.Target.Parent.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "signal.target.pid":
@@ -33806,10 +33806,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) int {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHAuthMethod(ev, &ev.Signal.Target.Process.UserSession)
+				return ev.Signal.Target.Process.UserSession.SSHAuthMethod
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "signal.target.user_session.ssh_client_ip":
@@ -33839,10 +33839,10 @@ func (_ *Model) GetEvaluator(field eval.Field, regID eval.RegisterID, offset int
 			EvalFnc: func(ctx *eval.Context) string {
 				ctx.AppendResolvedField(field)
 				ev := ctx.Event.(*Event)
-				return ev.FieldHandlers.ResolveSSHPublicKey(ev, &ev.Signal.Target.Process.UserSession)
+				return ev.Signal.Target.Process.UserSession.SSHPublicKey
 			},
 			Field:  field,
-			Weight: eval.HandlerWeight,
+			Weight: eval.FunctionWeight,
 			Offset: offset,
 		}, nil
 	case "signal.type":
