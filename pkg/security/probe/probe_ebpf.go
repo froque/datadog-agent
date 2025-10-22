@@ -1584,6 +1584,8 @@ func (p *EBPFProbe) handleRegularEvent(event *model.Event, offset int, dataLen u
 	case model.ExecEventType:
 		p.HandleSSHUserSession(event)
 
+	case model.ForkEventType:
+		p.HandleSSHUserSession(event)
 	}
 	return true
 }
