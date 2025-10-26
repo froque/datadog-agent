@@ -424,6 +424,84 @@ func TestFormatServiceDiscovery(t *testing.T) {
 			service:         nil,
 			expectedService: nil,
 		},
+		{
+			description: "service with log files (single log)",
+			service: &procutil.Service{
+				GeneratedName:       "nginx",
+				GeneratedNameSource: "unknown",
+				LogFiles:            []string{"/var/log/nginx/access.log"},
+			},
+			expectedService: &model.ServiceDiscovery{
+				GeneratedServiceName: &model.ServiceName{
+					Name:   "nginx",
+					Source: model.ServiceNameSource_SERVICE_NAME_SOURCE_UNKNOWN,
+				},
+				Resources: []*model.Resource{
+					{
+						Resource: &model.Resource_Logs{
+							Logs: &model.LogResource{
+								Path: "/var/log/nginx/access.log",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			description: "service with multiple log files",
+			service: &procutil.Service{
+				GeneratedName:       "nginx",
+				GeneratedNameSource: "unknown",
+				LogFiles: []string{
+					"/var/log/nginx/access.log",
+					"/var/log/nginx/error.log",
+					"/var/log/application.log",
+				},
+			},
+			expectedService: &model.ServiceDiscovery{
+				GeneratedServiceName: &model.ServiceName{
+					Name:   "nginx",
+					Source: model.ServiceNameSource_SERVICE_NAME_SOURCE_UNKNOWN,
+				},
+				Resources: []*model.Resource{
+					{
+						Resource: &model.Resource_Logs{
+							Logs: &model.LogResource{
+								Path: "/var/log/nginx/access.log",
+							},
+						},
+					},
+					{
+						Resource: &model.Resource_Logs{
+							Logs: &model.LogResource{
+								Path: "/var/log/nginx/error.log",
+							},
+						},
+					},
+					{
+						Resource: &model.Resource_Logs{
+							Logs: &model.LogResource{
+								Path: "/var/log/application.log",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			description: "service with no log files",
+			service: &procutil.Service{
+				GeneratedName:       "test",
+				GeneratedNameSource: "unknown",
+				LogFiles:            []string{},
+			},
+			expectedService: &model.ServiceDiscovery{
+				GeneratedServiceName: &model.ServiceName{
+					Name:   "test",
+					Source: model.ServiceNameSource_SERVICE_NAME_SOURCE_UNKNOWN,
+				},
+			},
+		},
 	} {
 		t.Run(tc.description, func(t *testing.T) {
 			actual := formatServiceDiscovery(tc.service)
