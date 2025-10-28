@@ -11,14 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/datadog-agent/comp/remote-config/rcclient"
-
 	"go.uber.org/atomic"
 
+	"github.com/DataDog/datadog-agent/comp/core/autodiscovery/integration"
 	"github.com/DataDog/datadog-agent/comp/core/config"
 	diagnose "github.com/DataDog/datadog-agent/comp/core/diagnose/def"
-
-	"github.com/DataDog/datadog-agent/comp/core/autodiscovery/integration"
+	"github.com/DataDog/datadog-agent/comp/remote-config/rcclient"
+	scanmanager "github.com/DataDog/datadog-agent/comp/snmpscanmanager/def"
 	"github.com/DataDog/datadog-agent/pkg/aggregator/sender"
 	"github.com/DataDog/datadog-agent/pkg/collector/check"
 	core "github.com/DataDog/datadog-agent/pkg/collector/corechecks"
@@ -49,6 +48,7 @@ type Check struct {
 	sessionFactory             session.Factory
 	workerRunDeviceCheckErrors *atomic.Uint64
 	agentConfig                config.Component
+	scanManager                scanmanager.Component
 }
 
 // Run executes the check
@@ -205,18 +205,19 @@ func (c *Check) IsHASupported() bool {
 }
 
 // Factory creates a new check factory
-func Factory(agentConfig config.Component, rcClient rcclient.Component) option.Option[func() check.Check] {
+func Factory(agentConfig config.Component, rcClient rcclient.Component, scanManager scanmanager.Component) option.Option[func() check.Check] {
 	return option.New(func() check.Check {
-		return newCheck(agentConfig, rcClient)
+		return newCheck(agentConfig, rcClient, scanManager)
 	})
 }
 
-func newCheck(agentConfig config.Component, rcClient rcclient.Component) check.Check {
+func newCheck(agentConfig config.Component, rcClient rcclient.Component, scanManager scanmanager.Component) check.Check {
 	return &Check{
 		rcClient:                   rcClient,
 		CheckBase:                  core.NewCheckBase(common.SnmpIntegrationName),
 		sessionFactory:             session.NewGosnmpSession,
 		workerRunDeviceCheckErrors: atomic.NewUint64(0),
 		agentConfig:                agentConfig,
+		scanManager:                scanManager,
 	}
 }
