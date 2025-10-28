@@ -470,6 +470,12 @@ func (s *Launcher) startNewTailerWithStoredInfo(file *tailer.File, m config.Tail
 		Rotated:         true,
 	}
 
+	if fingerprint != nil {
+		log.Infof("Creating new tailer for %s with fingerprint 0x%x", file.Path, fingerprint.Value)
+	} else {
+		log.Infof("Creating new tailer for %s with no fingerprint", file.Path)
+	}
+
 	tailer := tailer.NewTailer(tailerOptions)
 
 	var offset int64
