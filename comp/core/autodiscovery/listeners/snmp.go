@@ -536,6 +536,8 @@ func (l *SNMPListener) registerService(pendingDevice devicededuper.PendingDevice
 	if pendingDevice.WriteCache {
 		l.writeCache(svc.subnet)
 	}
+
+	fmt.Println("Registering device", pendingDevice.IP)
 	l.newService <- svc
 }
 

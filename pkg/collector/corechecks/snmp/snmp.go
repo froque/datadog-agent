@@ -53,6 +53,7 @@ type Check struct {
 
 // Run executes the check
 func (c *Check) Run() error {
+	fmt.Println("Running check of device", c.singleDeviceCk.GetDeviceID())
 	var checkErr error
 	sender, err := c.GetSender()
 	if err != nil {
@@ -166,6 +167,7 @@ func (c *Check) Configure(senderManager sender.SenderManager, integrationConfigD
 		if err != nil {
 			return fmt.Errorf("failed to create device check: %s", err)
 		}
+		fmt.Println("Finished configuring device", c.singleDeviceCk.GetDeviceID())
 	}
 	return nil
 }
