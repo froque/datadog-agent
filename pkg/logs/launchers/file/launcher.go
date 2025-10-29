@@ -471,9 +471,9 @@ func (s *Launcher) startNewTailerWithStoredInfo(file *tailer.File, m config.Tail
 	}
 
 	if fingerprint != nil {
-		log.Infof("Creating new tailer for %s with fingerprint 0x%x", file.Path, fingerprint.Value)
+		log.Debugf("Creating new tailer for %s with fingerprint 0x%x", file.Path, fingerprint.Value)
 	} else {
-		log.Infof("Creating new tailer for %s with no fingerprint", file.Path)
+		log.Debugf("Creating new tailer for %s with no fingerprint", file.Path)
 	}
 
 	tailer := tailer.NewTailer(tailerOptions)
@@ -596,9 +596,9 @@ func (s *Launcher) createTailer(file *tailer.File, outputChan chan *message.Mess
 	}
 
 	if fingerprint != nil {
-		log.Infof("Creating new tailer for %s with fingerprint 0x%x", file.Path, fingerprint.Value)
+		log.Debugf("Creating new tailer for %s with fingerprint 0x%x", file.Path, fingerprint.Value)
 	} else {
-		log.Infof("Creating new tailer for %s with no fingerprint", file.Path)
+		log.Debugf("Creating new tailer for %s with no fingerprint", file.Path)
 	}
 
 	return tailer.NewTailer(tailerOptions)
@@ -608,9 +608,9 @@ func (s *Launcher) createRotatedTailer(t *tailer.Tailer, file *tailer.File, patt
 	tailerInfo := t.GetInfo()
 	channel, monitor := s.pipelineProvider.NextPipelineChanWithMonitor()
 	if fingerprint != nil {
-		log.Infof("Creating new tailer for %s with fingerprint 0x%x (configuration: %v)", file.Path, fingerprint.Value, fingerprint.Config)
+		log.Debugf("Creating new tailer for %s with fingerprint 0x%x (configuration: %v)", file.Path, fingerprint.Value, fingerprint.Config)
 	} else {
-		log.Infof("Creating new tailer for %s with no fingerprint", file.Path)
+		log.Debugf("Creating new tailer for %s with no fingerprint", file.Path)
 	}
 	return t.NewRotatedTailer(file, channel, monitor, decoder.NewDecoderFromSourceWithPattern(file.Source, pattern, tailerInfo), tailerInfo, s.tagger, fingerprint, s.registry)
 }
