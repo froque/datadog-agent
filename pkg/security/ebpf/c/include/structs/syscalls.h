@@ -118,6 +118,9 @@ struct syscall_cache_t {
             int clone_mnt_ctr;
             int source;
             u64 ns_inum;
+            struct mount *firstmount;
+            struct mount *firstmountparent;
+            long long syscall_cache_id;
         } mount;
 
         struct {

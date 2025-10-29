@@ -8,7 +8,10 @@
 // Package probes holds probes related files
 package probes
 
-import manager "github.com/DataDog/ebpf-manager"
+import (
+	"fmt"
+	manager "github.com/DataDog/ebpf-manager"
+)
 
 func getMountProbes(fentry bool) []*manager.Probe {
 	var mountProbes = []*manager.Probe{
@@ -74,12 +77,34 @@ func getMountProbes(fentry bool) []*manager.Probe {
 		},
 	}
 
-	mountProbes = append(mountProbes, ExpandSyscallProbes(&manager.Probe{
-		ProbeIdentificationPair: manager.ProbeIdentificationPair{
-			UID: SecurityAgentUID,
-		},
-		SyscallFuncName: "mount",
-	}, fentry, EntryAndExit, true)...)
+	if fentry {
+		mountProbes = append(mountProbes, &manager.Probe{
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          SecurityAgentUID,
+				EBPFFuncName: "fentry__x64_sys_mount",
+			},
+		})
+		mountProbes = append(mountProbes, &manager.Probe{
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          SecurityAgentUID,
+				EBPFFuncName: "fentry__ia32_compat_sys_mount",
+			},
+		})
+	} else {
+		mountProbes = append(mountProbes, &manager.Probe{
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          SecurityAgentUID,
+				EBPFFuncName: "kprobe__64_sys_mount",
+			},
+		})
+		mountProbes = append(mountProbes, &manager.Probe{
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          SecurityAgentUID,
+				EBPFFuncName: "kprobe__32_compat_sys_mount",
+			},
+		})
+	}
+
 	mountProbes = append(mountProbes, ExpandSyscallProbes(&manager.Probe{
 		ProbeIdentificationPair: manager.ProbeIdentificationPair{
 			UID: SecurityAgentUID,
@@ -110,5 +135,14 @@ func getMountProbes(fentry bool) []*manager.Probe {
 		},
 		SyscallFuncName: "move_mount",
 	}, fentry, EntryAndExit)...)
+
+	for i := 0; i < 32; i++ {
+		mountProbes = append(mountProbes, &manager.Probe{
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          SecurityAgentUID,
+				EBPFFuncName: fmt.Sprintf("rethook_mount_exit_dup_%02d", i),
+			},
+		})
+	}
 	return mountProbes
 }

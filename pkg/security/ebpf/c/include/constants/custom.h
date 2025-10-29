@@ -293,4 +293,7 @@ enum global_rate_limiter_type {
 
 #define OPEN_TREE_CLONE 1
 
+#define NR_MOUNT_CACHES 8
+#define MOUNT_CACHE_SIZE 512
+
 #endif

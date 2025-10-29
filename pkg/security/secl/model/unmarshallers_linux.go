@@ -428,7 +428,7 @@ func (e *MkdirEvent) UnmarshalBinary(data []byte) (int, error) {
 
 // UnmarshalBinary unmarshalls a binary representation of itself
 func (m *Mount) UnmarshalBinary(data []byte) (int, error) {
-	if len(data) < 88 {
+	if len(data) < 96 {
 		return 0, ErrNotEnoughData
 	}
 
@@ -457,9 +457,9 @@ func (m *Mount) UnmarshalBinary(data []byte) (int, error) {
 	m.MountID = m.RootPathKey.MountID
 	m.Visible = binary.NativeEndian.Uint16(data[48:50]) != 0
 	m.Detached = binary.NativeEndian.Uint16(data[50:52]) != 0
-
-	m.NamespaceInode = binary.NativeEndian.Uint32(data[52:56])
-	return 88, nil
+	//ignore 4 bytes padding
+	m.NamespaceInode = binary.NativeEndian.Uint64(data[56:64])
+	return 96, nil
 }
 
 // UnmarshalBinary unmarshalls a binary representation of itself
@@ -481,8 +481,9 @@ func (e *MountEvent) UnmarshalBinary(data []byte) (int, error) {
 		e.Origin = MountOriginOpenTree
 	case MountEventSourceFsmountSyscall:
 		e.Origin = MountOriginFsmount
+	case MountEventSourceMoveMountSyscall:
+		e.Origin = MountOriginMoveMount
 	}
-
 	return n + 4, nil
 }
 

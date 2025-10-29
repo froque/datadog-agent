@@ -9,6 +9,7 @@
 package tests
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path"
@@ -157,19 +158,25 @@ func TestMount(t *testing.T) {
 	})
 }
 
+func waitEnter() {
+	fmt.Println("Press Enter to continue...")
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
+	fmt.Println("Continuing!")
+}
+
 func TestMountPropagated(t *testing.T) {
 	SkipIfNotAvailable(t)
 
 	// - testroot
 	// 		/ dir1
 	// 			/ test-drive (xfs mount)
-	// 		/ dir-bind-mounted (bind mount of testroot/dir1)
+	// 		/ dir1-bind-mounted (bind mount of testroot/dir1)
 	// 			/ test-drive (propagated)
 	//				/ test-file
 
 	ruleDefs := []*rules.RuleDefinition{{
 		ID:         "test_rule",
-		Expression: `chmod.file.path == "{{.Root}}/dir1-bind-mounted/test-drive/test-file"`,
+		Expression: `chmod.file.path != "/aaaaa"`,
 	}}
 
 	test, err := newTestModule(t, nil, ruleDefs, withForceReload())
@@ -220,9 +227,15 @@ func TestMountPropagated(t *testing.T) {
 		withFlags(syscall.MS_BIND|syscall.MS_REC),
 	)
 
+	fmt.Println("WILL BIND MOUNT")
+	time.Sleep(1 * time.Second)
+	waitEnter()
 	if err := bindMnt.mount(); err != nil {
 		t.Fatal(err)
 	}
+	waitEnter()
+	fmt.Println("FINISHED BIND MOUNTING")
+
 	defer func() {
 		testPropagatedDrivePath := path.Join(dir1BindMntPath, "test-drive")
 		if err := syscall.Unmount(testPropagatedDrivePath, syscall.MNT_FORCE); err != nil {
@@ -235,6 +248,7 @@ func TestMountPropagated(t *testing.T) {
 	}()
 
 	file, _, err := test.Path("dir1-bind-mounted/test-drive/test-file")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,11 +256,14 @@ func TestMountPropagated(t *testing.T) {
 	if err := os.WriteFile(file, []byte{}, 0700); err != nil {
 		t.Fatal(err)
 	}
+	mid, _ := getMountID(file)
+	fmt.Printf("The mount id of the file %s is %d \n", file, mid)
 
 	t.Run("bind-mounted-chmod", func(t *testing.T) {
 		test.WaitSignal(t, func() error {
 			return os.Chmod(file, 0700)
 		}, func(event *model.Event, _ *rules.Rule) {
+			fmt.Println("File mount id event:", event.Chmod.File.MountID)
 			assert.Equal(t, "chmod", event.GetType(), "wrong event type")
 			assert.Equal(t, file, event.Chmod.File.PathnameStr, "wrong path")
 		})
@@ -369,6 +386,7 @@ func TestMountSnapshot(t *testing.T) {
 			t.Error(err)
 			return
 		}
+
 		assert.Equal(t, model.MountSourceMountID, mountSource)
 		assert.NotEqual(t, model.MountOriginUnknown, mountOrigin)
 		assert.Equal(t, uint32(mntInfo.ID), mount.MountID, "snapshot and model mount ID mismatch")

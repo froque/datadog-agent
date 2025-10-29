@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moby/sys/mountinfo"
-
 	"github.com/DataDog/datadog-agent/pkg/security/secl/model"
 	"github.com/DataDog/datadog-agent/pkg/security/secl/rules"
 
@@ -80,24 +78,17 @@ func TmpMountFdAt(fd int, at string) (int, error) {
 }
 
 func getMountID(path string) (uint32, error) {
-	var stat unix.Stat_t
-	if err := unix.Stat(path, &stat); err != nil {
-		return 0, fmt.Errorf("failed to stat %s: %w", path, err)
-	}
+	// We need a file descriptor for the containing directory or AT_FDCWD
+	dirFD := unix.AT_FDCWD
+	flags := int(unix.AT_SYMLINK_NOFOLLOW)
 
-	mounts, err := mountinfo.GetMounts(nil)
+	var stat unix.Statx_t
+	err := unix.Statx(dirFD, path, flags, unix.STATX_BASIC_STATS, &stat)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get mounts: %w", err)
+		return 0, fmt.Errorf("statx failed: %v", err)
 	}
 
-	for _, mnt := range mounts {
-		mountDevice := unix.Mkdev(uint32(mnt.Major), uint32(mnt.Minor))
-		if mountDevice == stat.Dev {
-			return uint32(mnt.ID), nil
-		}
-	}
-
-	return 0, fmt.Errorf("mount not found for path %s", path)
+	return uint32(stat.Mnt_id), nil
 }
 
 func TestOpenTree(t *testing.T) {
