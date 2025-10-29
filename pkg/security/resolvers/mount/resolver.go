@@ -330,7 +330,7 @@ func (mr *Resolver) insert(m *model.Mount, pid uint32, moved bool) {
 
 	// if we're inserting a mountpoint from a kernel event (!= procfs) that isn't the root fs
 	// then remove the leading slash from the mountpoint
-	fmt.Printf("Received new mount %+v\n", m)
+	//fmt.Printf("Received new mount %+v\n", m)
 
 	if len(m.MountPointStr) > 0 && m.MountPointStr[:1] == "/" {
 		m.Path = m.MountPointStr
