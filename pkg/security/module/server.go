@@ -38,6 +38,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/security/proto/api/transform"
 	"github.com/DataDog/datadog-agent/pkg/security/rules/monitor"
 	"github.com/DataDog/datadog-agent/pkg/security/secl/model"
+	"github.com/DataDog/datadog-agent/pkg/security/secl/model/usersession"
 	"github.com/DataDog/datadog-agent/pkg/security/secl/rules"
 	"github.com/DataDog/datadog-agent/pkg/security/seclog"
 	"github.com/DataDog/datadog-agent/pkg/security/serializers"
@@ -73,12 +74,21 @@ type pendingMsg struct {
 	sendAfter       time.Time
 	retry           int
 	skip            bool
+
+	sshSessionPatcher *sprobe.SSHUserSessionPatcher
 }
 
 func (p *pendingMsg) isResolved() bool {
 	for _, report := range p.actionReports {
 		if err := report.IsResolved(); err != nil {
 			seclog.Debugf("action report not resolved: %v", err)
+			return false
+		}
+	}
+
+	if p.sshSessionPatcher != nil {
+		if err := p.sshSessionPatcher.IsResolved(); err != nil {
+			seclog.Debugf("ssh session not resolved: %v", err)
 			return false
 		}
 	}
@@ -101,6 +111,10 @@ func (p *pendingMsg) toJSON() ([]byte, error) {
 		if len(data) > 0 {
 			p.backendEvent.RuleActions = append(p.backendEvent.RuleActions, data)
 		}
+	}
+
+	if p.sshSessionPatcher != nil {
+		p.sshSessionPatcher.PatchEvent(p.eventSerializer)
 	}
 
 	backendEventJSON, err := easyjson.Marshal(p.backendEvent)
@@ -424,7 +438,24 @@ func (a *APIServer) SendEvent(rule *rules.Rule, event events.Event, extTagsCb fu
 				actionReports = append(actionReports, ar)
 			}
 		}
-
+		// Create SSH session patcher if the event has an SSH user session
+		var sshSessionPatcher *sprobe.SSHUserSessionPatcher
+		if ev.ProcessContext.UserSession.ID != 0 && ev.ProcessContext.UserSession.SessionType == int(usersession.UserSessionTypeSSH) {
+			// Access the EBPFProbe to get the UserSessionsResolver
+			if ebpfProbe, ok := a.probe.PlatformProbe.(*sprobe.EBPFProbe); ok {
+				// Create the user session context serializer
+				userSessionCtx := &serializers.UserSessionContextSerializer{
+					ID:          fmt.Sprintf("%x", ev.ProcessContext.UserSession.ID),
+					SessionType: usersession.Type(ev.ProcessContext.UserSession.SessionType).String(),
+					SSHPort:     ev.ProcessContext.UserSession.SSHPort,
+					SSHClientIP: ev.ProcessContext.UserSession.SSHClientIP.IP.String(),
+				}
+				sshSessionPatcher = sprobe.NewSSHUserSessionPatcher(
+					userSessionCtx,
+					ebpfProbe.Resolvers.UserSessionsResolver,
+				)
+			}
+		}
 		timestamp := ev.ResolveEventTime()
 		if timestamp.IsZero() {
 			timestamp = time.Now()
@@ -440,6 +471,8 @@ func (a *APIServer) SendEvent(rule *rules.Rule, event events.Event, extTagsCb fu
 			sendAfter:       time.Now().Add(retention),
 			tags:            tags,
 			actionReports:   actionReports,
+
+			sshSessionPatcher: sshSessionPatcher,
 		}
 
 		a.enqueue(msg)

@@ -70,19 +70,21 @@ type incrementalFileReader struct {
 	stopReading chan struct{} // make(chan struct{}, 1)
 }
 
-type sshSessionKey struct {
+// SSHSessionKey describes the key to a ssh session in the LRU
+type SSHSessionKey struct {
 	IP   string // net.IP.String()
 	Port string
 }
 
-type sshSessionValue struct {
+// SSHSessionValue describes the value to a ssh session in the LRU
+type SSHSessionValue struct {
 	AuthenticationMethod int
 	PublicKey            string
 }
 
 type sshSessionParsed struct {
-	mu  sync.Mutex
-	lru *simplelru.LRU[sshSessionKey, sshSessionValue]
+	Mu  sync.Mutex
+	Lru *simplelru.LRU[SSHSessionKey, SSHSessionValue]
 }
 
 // Resolver is used to resolve the user sessions context
@@ -93,7 +95,7 @@ type Resolver struct {
 	userSessionsMap *ebpf.Map
 
 	sshLogReader     *incrementalFileReader
-	sshSessionParsed sshSessionParsed
+	SSHSessionParsed sshSessionParsed
 }
 
 // NewResolver returns a new instance of Resolver
@@ -111,8 +113,6 @@ func NewResolver(cacheSize int) (*Resolver, error) {
 // Start initializes the eBPF map of the resolver
 func (r *Resolver) Start(manager *manager.Manager) error {
 	r.Lock()
-	fmt.Print("[DEBUG] Start user session resolver\n")
-	defer fmt.Print("[DEBUG] End user session resolver\n")
 	defer r.Unlock()
 
 	m, err := managerhelper.Map(manager, "user_sessions")
@@ -225,7 +225,7 @@ func (r *Resolver) startReading() {
 				return
 			case <-ticker.C:
 				r.sshLogReader.mu.Lock()
-				err := r.sshLogReader.resolveFromJournalctl(&r.sshSessionParsed)
+				err := r.sshLogReader.resolveFromJournalctl(&r.SSHSessionParsed)
 				if err != nil {
 					seclog.Errorf("failed to read journalctl: %v", err)
 				}
@@ -240,7 +240,7 @@ func (r *Resolver) startReading() {
 				return
 			case <-ticker.C:
 				r.sshLogReader.mu.Lock()
-				err := r.sshLogReader.resolveFromLogFile(&r.sshSessionParsed)
+				err := r.sshLogReader.resolveFromLogFile(&r.SSHSessionParsed)
 				if err != nil {
 					seclog.Errorf("failed to read ssh log lines: %v", err)
 				}
@@ -314,7 +314,7 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 		parsedIP := net.ParseIP(sshParsedLine.IP)
 
 		// We store every session in the LRU cache
-		var authType int
+		var authType usersession.AuthType
 		var publicKey string
 		switch sshParsedLine.AuthentificationMethod {
 		case "publickey":
@@ -328,18 +328,18 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 		default:
 			authType = usersession.SSHAuthMethodUnknown
 		}
-		key := sshSessionKey{
+		key := SSHSessionKey{
 			IP:   parsedIP.String(),
 			Port: sshParsedLine.Port,
 		}
-		value := sshSessionValue{
-			AuthenticationMethod: authType,
+		value := SSHSessionValue{
+			AuthenticationMethod: int(authType),
 			PublicKey:            publicKey,
 		}
-		sshSessionParsed.mu.Lock()
+		sshSessionParsed.Mu.Lock()
 
-		sshSessionParsed.lru.Add(key, value)
-		sshSessionParsed.mu.Unlock()
+		sshSessionParsed.Lru.Add(key, value)
+		sshSessionParsed.Mu.Unlock()
 		return true, sshLogLine.Date
 	}
 	return false, sshLogLine.Date
@@ -494,7 +494,7 @@ func (r *Resolver) StartSSHUserSessionResolver() {
 	r.sshLogReader = newIncrementalFileReader(path)
 
 	// Initialize the SSH session LRU cache (needed in all cases)
-	r.sshSessionParsed.lru, err = simplelru.NewLRU[sshSessionKey, sshSessionValue](100, nil)
+	r.SSHSessionParsed.Lru, err = simplelru.NewLRU[SSHSessionKey, SSHSessionValue](100, nil)
 	if err != nil {
 		seclog.Errorf("couldn't create SSH Session LRU cache: %v", err)
 		return
@@ -526,6 +526,34 @@ func (r *Resolver) StartSSHUserSessionResolver() {
 	go r.startReading()
 	// Note: the file is not closed here, as the sshLogReader manage it
 
+}
+
+// ResolveSSHUserSession resolves the ssh user session from the auth log
+func (r *Resolver) ResolveSSHUserSession(ctx *model.UserSessionContext) *model.UserSessionContext {
+	id := ctx.ID
+	if id == 0 {
+		return nil
+	}
+
+	r.Lock()
+
+	defer r.Unlock()
+
+	key := SSHSessionKey{
+		IP:   ctx.SSHClientIP.IP.String(),
+		Port: fmt.Sprintf("%d", ctx.SSHPort),
+	}
+	r.SSHSessionParsed.Mu.Lock()
+	value, ok := r.SSHSessionParsed.Lru.Get(key)
+	r.SSHSessionParsed.Mu.Unlock()
+	if !ok {
+		ctx.Resolved = true
+		return nil
+	}
+	ctx.SSHAuthMethod = int(value.AuthenticationMethod)
+	ctx.SSHPublicKey = value.PublicKey
+	ctx.Resolved = true
+	return ctx
 }
 
 // Close closes the resolver

@@ -18,7 +18,7 @@ const (
 // SSHAuthMethodConstants are the supported SSH authentication methods
 const (
 	// SSHAuthMethodUnknown is the unknown SSH authentication method
-	SSHAuthMethodUnknown int = iota
+	SSHAuthMethodUnknown AuthType = iota
 	// SSHAuthMethodPassword is the password SSH authentication method
 	SSHAuthMethodPassword
 	// SSHAuthMethodPublicKey is the public key SSH authentication method
@@ -40,13 +40,33 @@ var (
 // Type is used to identify the User Session type
 type Type uint8
 
+// AuthType is used to identify the SSH authentication method
+type AuthType uint8
+
 func (ust Type) String() string {
-	return UserSessionTypeStrings[ust]
+	switch ust {
+	case UserSessionTypeK8S:
+		return "k8s"
+	case UserSessionTypeSSH:
+		return "ssh"
+	default:
+		return "unknown"
+	}
 }
 
 // InitUserSessionTypes initializes internal structures for parsing Type values
 func InitUserSessionTypes() {
 	for k, v := range UserSessionTypes {
 		UserSessionTypeStrings[v] = k
+	}
+}
+func (authType AuthType) String() string {
+	switch authType {
+	case SSHAuthMethodPassword:
+		return "password"
+	case SSHAuthMethodPublicKey:
+		return "public_key"
+	default:
+		return "unknown"
 	}
 }

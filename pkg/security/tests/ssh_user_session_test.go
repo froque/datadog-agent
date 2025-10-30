@@ -10,6 +10,7 @@ package tests
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,12 +18,65 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/security/secl/model"
-	"github.com/DataDog/datadog-agent/pkg/security/secl/model/usersession"
 	"github.com/DataDog/datadog-agent/pkg/security/secl/rules"
+	"github.com/avast/retry-go/v4"
+	"github.com/oliveagle/jsonpath"
 	"github.com/stretchr/testify/assert"
 )
+
+// checkSSHUserSessionJSON check if all the fields in the JSON are valid for a SSH Session
+func checkSSHUserSessionJSON(testMod *testModule, t testing.TB, data []byte, obj interface{}) {
+	jsonPathValidation(testMod, data, func(_ *testModule, obj interface{}) {
+
+		// Check all the fields
+		if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.id`); err != nil || el == nil {
+			t.Errorf("user_session.id not found: %v", err)
+		} else if id, ok := el.(string); !ok || id == "" || id == "0" {
+			t.Errorf("user_session.id is empty or invalid: %v", el)
+		}
+
+		if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.session_type`); err != nil || el == nil {
+			t.Errorf("user_session.session_type not found: %v", err)
+		} else if sessionType, ok := el.(string); !ok || sessionType != "ssh" {
+			t.Errorf("user_session.session_type is not 'ssh': %v", el)
+		}
+
+		if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.ssh_port`); err != nil || el == nil {
+			t.Errorf("user_session.ssh_port not found: %v", err)
+		} else if port, ok := el.(float64); !ok || port <= 0 {
+			t.Errorf("user_session.ssh_port is invalid: %v", el)
+		}
+
+		if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.ssh_client_ip`); err != nil || el == nil {
+			t.Errorf("user_session.ssh_client_ip not found: %v", err)
+		} else if ip, ok := el.(string); !ok || ip == "" {
+			t.Errorf("user_session.ssh_client_ip is empty: %v", el)
+		} else if ip != "127.0.0.1" && ip != "::1" {
+			t.Errorf("user_session.ssh_client_ip should be localhost (127.0.0.1 or ::1): %v", ip)
+		}
+
+		if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.ssh_auth_method`); err != nil || el == nil {
+			t.Errorf("user_session.ssh_auth_method not found: %v", err)
+		} else if authMethod, ok := el.(string); !ok || authMethod == "" {
+			t.Errorf("user_session.ssh_auth_method is empty: %v", el)
+		} else if authMethod != "public_key" && authMethod != "password" {
+			t.Errorf("user_session.ssh_auth_method has unexpected value: %v", authMethod)
+		}
+
+		if authMethod, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.ssh_auth_method`); err == nil {
+			if authMethodStr, ok := authMethod.(string); ok && authMethodStr == "publickey" {
+				if el, err := jsonpath.JsonPathLookup(obj, `$.process.user_session.ssh_public_key`); err != nil || el == nil {
+					t.Errorf("user_session.ssh_public_key not found for publickey auth: %v", err)
+				} else if pubKey, ok := el.(string); !ok || pubKey == "" {
+					t.Errorf("user_session.ssh_public_key is empty for publickey auth: %v", el)
+				}
+			}
+		}
+	})
+}
 
 func ensureLocalhostSSHAuth() error {
 	u, err := user.Current()
@@ -125,7 +179,7 @@ func TestSSHUserSession(t *testing.T) {
 	ruleDefs := []*rules.RuleDefinition{
 		{
 			ID:         "test_rule_ssh_user_session",
-			Expression: `exec.user_session.id != 0 && exec.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `" && exec.user_session.ssh_auth_method == publickey`,
+			Expression: `process.user_session.id != 0 && process.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `"`,
 		},
 	}
 
@@ -136,7 +190,7 @@ func TestSSHUserSession(t *testing.T) {
 	defer test.Close()
 
 	t.Run("ssh_then_pwd", func(t *testing.T) {
-		test.WaitSignal(t, func() error {
+		err := test.GetEventSent(t, func() error {
 			if err := ensureLocalhostSSHAuth(); err != nil {
 				fmt.Fprintf(os.Stderr, "setup ssh failed: %v\n", err)
 				return err
@@ -146,13 +200,27 @@ func TestSSHUserSession(t *testing.T) {
 				return err
 			}
 			return nil
-		}, func(event *model.Event, rule *rules.Rule) {
-			assertTriggeredRule(t, rule, "test_rule_ssh_user_session")
-			assert.NotEqual(t, 0, event.ProcessContext.UserSession.ID)
-			assert.Equal(t, int(usersession.UserSessionTypes["ssh"]), event.ProcessContext.UserSession.SessionType)
-			assert.Equal(t, currentUser.Username, event.Exec.User)
-			assert.Contains(t, []string{"127.0.0.1", "::1"}, event.ProcessContext.UserSession.SSHClientIP.IP.String())
-		})
+		}, func(rule *rules.Rule, event *model.Event) bool {
+			return true
+		}, time.Second*3, "test_rule_ssh_user_session")
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = retry.Do(func() error {
+			msg := test.msgSender.getMsg("test_rule_ssh_user_session")
+			if msg == nil {
+				return errors.New("not found")
+			}
+			validateMessageSchema(t, string(msg.Data))
+
+			// Check all the fields
+			checkSSHUserSessionJSON(test, t, msg.Data, msg.Data)
+
+			return nil
+		}, retry.Delay(200*time.Millisecond), retry.Attempts(30), retry.DelayType(retry.FixedDelay))
+		assert.NoError(t, err)
+
 	})
 }
 
@@ -210,7 +278,7 @@ func TestSSHUserSessionRotated(t *testing.T) {
 	ruleDefs := []*rules.RuleDefinition{
 		{
 			ID:         "test_rule_ssh_user_session",
-			Expression: `exec.user_session.id != 0 && exec.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `" && exec.user_session.ssh_auth_method == publickey`,
+			Expression: `exec.user_session.id != 0 && exec.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `"`,
 		},
 	}
 
@@ -266,18 +334,32 @@ func TestSSHUserSessionRotated(t *testing.T) {
 	assert.NotEqual(t, inodeBeforeRotate, inodeAfterRotate, "inode of %s should be different after rotate", logPath)
 
 	t.Run("ssh_then_pwd_after_rotation", func(t *testing.T) {
-		test.WaitSignal(t, func() error {
+		err := test.GetEventSent(t, func() error {
 			if err := sshLocalhostWithGeneratedKey("pwd"); err != nil {
 				fmt.Fprintf(os.Stderr, "ssh failed: %v\n", err)
 				return err
 			}
 			return nil
-		}, func(event *model.Event, rule *rules.Rule) {
-			assertTriggeredRule(t, rule, "test_rule_ssh_user_session")
-			assert.NotEqual(t, 0, event.ProcessContext.UserSession.ID)
-			assert.Equal(t, int(usersession.UserSessionTypes["ssh"]), event.ProcessContext.UserSession.SessionType)
-			assert.Equal(t, currentUser.Username, event.Exec.User)
-			assert.Contains(t, []string{"127.0.0.1", "::1"}, event.ProcessContext.UserSession.SSHClientIP.IP.String())
-		})
+		}, func(rule *rules.Rule, event *model.Event) bool {
+			return true
+		}, time.Second*3, "test_rule_ssh_user_session")
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = retry.Do(func() error {
+			msg := test.msgSender.getMsg("test_rule_ssh_user_session")
+			if msg == nil {
+				return errors.New("not found")
+			}
+			validateMessageSchema(t, string(msg.Data))
+
+			// Check all the fields
+			checkSSHUserSessionJSON(test, t, msg.Data, msg.Data)
+
+			return nil
+		}, retry.Delay(200*time.Millisecond), retry.Attempts(30), retry.DelayType(retry.FixedDelay))
+		assert.NoError(t, err)
+
 	})
 }
