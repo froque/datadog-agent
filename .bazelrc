@@ -9,18 +9,24 @@ common --@rules_python//python/config_settings:bootstrap_impl=script # https://g
 build --verbose_failures
 # Do not leak local environment variables into the build context
 build --incompatible_strict_action_env
+
+# Linux config ---------------------------------------------------------------------------------------------------------
 build:linux --strategy=sandboxed
-build:macos --strategy=sandboxed
+
+# Windows config -------------------------------------------------------------------------------------------------------
 build:windows --strategy=standalone # Valid values are: [dynamic_worker, standalone, dynamic, remote, worker, local]
 # For whatever reason if convenience symlinks are present, the build fails on Windows.
 # Disabling them for now.
 build:windows --noexperimental_convenience_symlinks
 
+# macOS config ---------------------------------------------------------------------------------------------------------
+build:macos --strategy=sandboxed
 # Make sure we support the minimum macos version we advertise
 # https://docs.datadoghq.com/agent/supported_platforms/?tab=macos
 # https://bazel.build/reference/command-line-reference#flag--macos_minimum_os
 build:macos --macos_minimum_os=11.0
 
+# Remote cache config --------------------------------------------------------------------------------------------------
 # datadog-agent virtually isolates caching instance from its parent (which is remote-caching).
 # If entry isn't found in datadog-agent, it will be searched in remote-caching.
 common:cache --remote_instance_name=remote-caching/datadog-agent
@@ -28,4 +34,9 @@ common:cache --remote_cache=grpc://bazel-buildbarn-frontend.ddbuild.io:443
 common:cache --remote_timeout=60
 common:cache --remote_retries=1
 
+# CI config ------------------------------------------------------------------------------------------------------------
+common:ci --config=cache
+common:ci --test_output=streamed # print test setup errors to the job output instead of only capturing them in test.log
+
+# Local development flags ----------------------------------------------------------------------------------------------
 try-import %workspace%/user.bazelrc
