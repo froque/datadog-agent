@@ -11,11 +11,11 @@ Probes:
       subprogram: {subprogram: 1}
       events:
         - Kind: Entry
-          Type: 267 EventRootType Probe[main.HandleHTTP]
+          Type: 268 EventRootType Probe[main.HandleHTTP]
           InjectionPoints: [{PC: "0xd31373", Frameless: false}]
           Condition: null
         - Kind: Return
-          Type: 268 EventRootType Probe[main.HandleHTTP]Return
+          Type: 267 EventRootType Probe[main.HandleHTTP]Return
           InjectionPoints:
             - PC: "0xd315af"
               Frameless: false
@@ -643,7 +643,7 @@ Types:
       GoRuntimeType: 603424
       GoKind: 18
     - __kind: EventRootType
-      ID: 267
+      ID: 268
       Name: Probe[main.HandleHTTP]
       ByteSize: 25
       PresenceBitsetSize: 1
@@ -669,9 +669,31 @@ Types:
                   Offset: 0
                   ByteSize: 8
     - __kind: EventRootType
-      ID: 268
+      ID: 267
       Name: Probe[main.HandleHTTP]Return
-      Expressions: []
+      ByteSize: 17
+      PresenceBitsetSize: 1
+      Expressions:
+        - Name: '&buf'
+          Offset: 1
+          Kind: local
+          Expression:
+            Type: 112 PointerType *bytes.Buffer
+            Operations:
+                - __kind: LocationOp
+                  Variable: {subprogram: 1, index: 3, name: '&buf'}
+                  Offset: 0
+                  ByteSize: 8
+        - Name: '&buf'
+          Offset: 9
+          Kind: local
+          Expression:
+            Type: 112 PointerType *bytes.Buffer
+            Operations:
+                - __kind: LocationOp
+                  Variable: {subprogram: 1, index: 3, name: '&buf'}
+                  Offset: 0
+                  ByteSize: 8
     - __kind: EventRootType
       ID: 269
       Name: Probe[main.LookAtTheRequest]
@@ -691,7 +713,6 @@ Types:
     - __kind: EventRootType
       ID: 270
       Name: Probe[main.LookAtTheRequest]Return
-      Expressions: []
     - __kind: ArrayType
       ID: 92
       Name: '[0]uint8'

@@ -11,11 +11,11 @@ Probes:
       subprogram: {subprogram: 1}
       events:
         - Kind: Entry
-          Type: 116 EventRootType Probe[main.callMe]
+          Type: 117 EventRootType Probe[main.callMe]
           InjectionPoints: [{PC: "0xba068", Frameless: false}]
           Condition: null
         - Kind: Return
-          Type: 117 EventRootType Probe[main.callMe]Return
+          Type: 116 EventRootType Probe[main.callMe]Return
           InjectionPoints: [{PC: "0xba0dc", Frameless: false}]
           Condition: null
       probeTemplate: {TemplateString: "", Segments: []}
@@ -269,7 +269,7 @@ Types:
       GoKind: 22
       Pointee: 1 BaseType uintptr
     - __kind: EventRootType
-      ID: 116
+      ID: 117
       Name: Probe[main.callMe]
       ByteSize: 41
       PresenceBitsetSize: 1
@@ -305,9 +305,8 @@ Types:
                   Offset: 0
                   ByteSize: 8
     - __kind: EventRootType
-      ID: 117
+      ID: 116
       Name: Probe[main.callMe]Return
-      Expressions: []
     - __kind: ArrayType
       ID: 92
       Name: '[10]runtime.heldLockInfo'
