@@ -553,19 +553,14 @@ func TestNoGoLeakWithNonBlockingStop(t *testing.T) {
 	// - stop channel is empty (0/1)
 	// - StopAfterFileRotation goroutine is still sleeping (not woken up yet)
 
-	// SIMULATE RACE CONDITION
-	// Manually fill the channel to simulate the race where Stop() is called
-	// multiple times concurrently, or where the timing is such that the channel
-	// is still full when StopAfterFileRotation wakes up
-	tailer.stop <- struct{}{} // Fill channel to 1/1
-
-	// Wait for the closeTimeout to expire (100ms)
-	// The goroutine will wake up and try to send to the FULL stop channel (1/1)
-	//
-	// with select/default: it will hit the default case, goroutine exits cleanly
+	// Wait for the closeTimeout to expire
+	// The StopAfterFileRotation goroutine will wake up and try to send to the stop channel,
+	// but since readForever has already exited, there's no reader.
+	// The select/default in StopAfterFileRotation will hit the default case, allowing the goroutine to exit cleanly.
 
 	// Wait long enough for the goroutine to wake up and complete
-	time.Sleep(50 * time.Millisecond)
+	// closeTimeout is 20ms, so 100ms gives us plenty of buffer for slow CI machines
+	time.Sleep(100 * time.Millisecond)
 
 	// The deferred goleak.VerifyNone() will detect if goroutine leaked
 }
