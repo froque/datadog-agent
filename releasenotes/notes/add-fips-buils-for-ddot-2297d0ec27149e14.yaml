@@ -1,0 +1,2 @@
+enhancements:
+  - 'Also provide FIPS-compilant builds for the Datadog distribution of OpenTelemetry (DDOT).'
