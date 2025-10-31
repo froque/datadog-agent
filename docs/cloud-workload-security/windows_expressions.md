@@ -1043,6 +1043,7 @@ SSH authentication methods.
 | ---- |---------------|
 | `password` | all |
 | `publickey` | all |
+| `unknown` | all |
 
 ### `UserSessionTypes` {#usersessiontypes}
 UserSessionTypes are the supported user session types.

@@ -2726,6 +2726,10 @@
         {
           "name": "publickey",
           "architecture": "all"
+        },
+        {
+          "name": "unknown",
+          "architecture": "all"
         }
       ]
     },

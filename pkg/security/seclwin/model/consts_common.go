@@ -450,9 +450,10 @@ var (
 
 	// SSHAuthMethodConstants are the supported SSH authentication methods
 	// generate_constants:SSHAuthMethod,SSH authentication methods.
-	SSHAuthMethodConstants = map[string]uint8{
-		"password":  1,
-		"publickey": 2,
+	SSHAuthMethodConstants = map[string]usersession.AuthType{
+		"password":  usersession.SSHAuthMethodPassword,
+		"publickey": usersession.SSHAuthMethodPublicKey,
+		"unknown":   usersession.SSHAuthMethodUnknown,
 	}
 )
 
@@ -472,7 +473,7 @@ var (
 	fileTypeStrings            = map[FileType]string{}
 	linkageTypeStrings         = map[LinkageType]string{}
 	userSessionTypeStrings     = map[usersession.Type]string{}
-	sSHAuthMethodStrings       = map[uint8]string{}
+	sSHAuthMethodStrings       = map[usersession.AuthType]string{}
 )
 
 // File flags

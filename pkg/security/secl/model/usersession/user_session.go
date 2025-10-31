@@ -27,11 +27,6 @@ const (
 
 var (
 	// UserSessionTypes are the supported user session types
-	UserSessionTypes = map[string]Type{
-		"unknown": UserSessionTypeUnknown,
-		"k8s":     UserSessionTypeK8S,
-		"ssh":     UserSessionTypeSSH,
-	}
 
 	// UserSessionTypeStrings is used to
 	UserSessionTypeStrings = map[Type]string{}
@@ -54,12 +49,6 @@ func (ust Type) String() string {
 	}
 }
 
-// InitUserSessionTypes initializes internal structures for parsing Type values
-func InitUserSessionTypes() {
-	for k, v := range UserSessionTypes {
-		UserSessionTypeStrings[v] = k
-	}
-}
 func (authType AuthType) String() string {
 	switch authType {
 	case SSHAuthMethodPassword:
