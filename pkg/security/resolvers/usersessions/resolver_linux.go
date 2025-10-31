@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -122,7 +123,10 @@ func (r *Resolver) Start(manager *manager.Manager) error {
 	r.userSessionsMap = m
 
 	// start the resolver for ssh sessions
-	r.StartSSHUserSessionResolver()
+	err = r.StartSSHUserSessionResolver()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -176,18 +180,8 @@ func (r *Resolver) ResolveUserSession(id uint64) *model.UserSessionContext {
 	return ctx
 }
 
-func newIncrementalFileReader(path string) *incrementalFileReader {
-	return &incrementalFileReader{
-		path:        path,
-		stopReading: make(chan struct{}, 1),
-	}
-}
-
 // Init opens the file and sets the initial offset
 func (ifr *incrementalFileReader) Init(f *os.File) error {
-	ifr.mu.Lock()
-	defer ifr.mu.Unlock()
-
 	if ifr.f != nil {
 		return nil
 	}
@@ -475,14 +469,23 @@ func (ifr *incrementalFileReader) reloadIfRotated() error {
 
 // StartSSHUserSessionResolver initializes the ssh log reader by looking for the available file, opening it and setting up the initial offset
 // Lock must be held
-func (r *Resolver) StartSSHUserSessionResolver() {
+func (r *Resolver) StartSSHUserSessionResolver() error {
+	var err error
+
+	// Initialize the SSH session LRU cache (needed in all cases)
+	r.SSHSessionParsed.Lru, err = simplelru.NewLRU[SSHSessionKey, SSHSessionValue](100, nil)
+	if err != nil {
+		seclog.Errorf("couldn't create SSH Session LRU cache: %v", err)
+		return err
+	}
+
+	// Try to find the ssh log file
 	possibleLogPaths := []string{
 		"/var/log/auth.log", // Debian/Ubuntu
 		"/var/log/secure",   // RHEL/CentOS/Fedora
 		"/var/log/messages", // openSUSE/autres
 	}
 	path := ""
-	var err error
 	for _, possiblePath := range possibleLogPaths {
 		_, err = os.Stat(possiblePath)
 		if err == nil {
@@ -490,22 +493,18 @@ func (r *Resolver) StartSSHUserSessionResolver() {
 			break
 		}
 	}
-
-	r.sshLogReader = newIncrementalFileReader(path)
-
-	// Initialize the SSH session LRU cache (needed in all cases)
-	r.SSHSessionParsed.Lru, err = simplelru.NewLRU[SSHSessionKey, SSHSessionValue](100, nil)
-	if err != nil {
-		seclog.Errorf("couldn't create SSH Session LRU cache: %v", err)
-		return
+	// Initialize the SSH log reader
+	r.sshLogReader = &incrementalFileReader{
+		path:        path,
+		stopReading: make(chan struct{}, 1),
 	}
-
+	// If there is no log file, we use journalctl (atm we do nothing)
 	if path == "" {
-		// Don't want to continue in case there is no log file, use journalctl instead
-		r.sshLogReader.lastRead = time.Now()
-		r.sshLogReader.readFromJournalctl = true
-		go r.startReading()
-		return
+		// // Don't want to continue in case there is no log file, use journalctl instead
+		// r.sshLogReader.lastRead = time.Now()
+		// r.sshLogReader.readFromJournalctl = true
+		// go r.startReading()
+		return nil
 	}
 
 	r.sshLogReader.readFromJournalctl = false
@@ -513,19 +512,18 @@ func (r *Resolver) StartSSHUserSessionResolver() {
 	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
 		seclog.Errorf("failed to open ssh log file: %v", err)
-		return
+		return err
 	}
 	if err := r.sshLogReader.Init(f); err != nil {
 		seclog.Errorf("failed to init ssh log reader: %v", err)
-		// If Init fails, we close the file
 		if f != nil {
 			f.Close()
 		}
-		return
+		return err
 	}
 	go r.startReading()
 	// Note: the file is not closed here, as the sshLogReader manage it
-
+	return nil
 }
 
 // ResolveSSHUserSession resolves the ssh user session from the auth log
@@ -541,7 +539,7 @@ func (r *Resolver) ResolveSSHUserSession(ctx *model.UserSessionContext) *model.U
 
 	key := SSHSessionKey{
 		IP:   ctx.SSHClientIP.IP.String(),
-		Port: fmt.Sprintf("%d", ctx.SSHPort),
+		Port: strconv.Itoa(ctx.SSHPort),
 	}
 	r.SSHSessionParsed.Mu.Lock()
 	value, ok := r.SSHSessionParsed.Lru.Get(key)
