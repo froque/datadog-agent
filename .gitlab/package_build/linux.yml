@@ -78,6 +78,23 @@ datadog-agent-7-x64-fips:
 datadog-agent-7-arm64-fips:
   extends: [.agent_build_common, .agent_build_arm64, .agent_fips_build]
 
+# Common to IoT, DDOT and dogstatsd
+.toolchain-common-x64:
+  tags: ["arch:amd64", "specific:true"]
+  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
+  variables:
+    DD_CC: "x86_64-unknown-linux-gnu-gcc"
+    DD_CXX: "x86_64-unknown-linux-gnu-g++"
+
+.toolchain-common-arm64:
+  tags: ["arch:arm64", "specific:true"]
+  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
+  variables:
+    DD_CC: "aarch64-unknown-linux-gnu-gcc"
+    DD_CXX: "aarch64-unknown-linux-gnu-g++"
+
+# ----- IoT -----
+
 .iot-agent-common:
   extends: .agent_build_common
   needs: ["go_mod_tidy_check", "go_deps"]
@@ -90,19 +107,24 @@ datadog-agent-7-arm64-fips:
     - ls -la $OMNIBUS_PACKAGE_DIR
     - !reference [.upload_sbom_artifacts]
 
-.iot-otel-statsd-x64:
-  tags: ["arch:amd64", "specific:true"]
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
-  variables:
-    DD_CC: "x86_64-unknown-linux-gnu-gcc"
-    DD_CXX: "x86_64-unknown-linux-gnu-g++"
+iot-agent-x64:
+  extends: [.iot-agent-common, .toolchain-common-x64]
 
-.iot-otel-statsd-arm64:
+iot-agent-arm64:
+  extends: [.iot-agent-common, .toolchain-common-arm64]
+
+iot-agent-armhf:
+  extends: .iot-agent-common
+  # Run with platform:arm64 since no platform:armhf exists and arm64 should be backwards compatible
   tags: ["arch:arm64", "specific:true"]
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
+  image: registry.ddbuild.io/ci/datadog-agent-buildimages/rpm_armhf$CI_IMAGE_RPM_ARMHF_SUFFIX:$CI_IMAGE_RPM_ARMHF
   variables:
-    DD_CC: "aarch64-unknown-linux-gnu-gcc"
-    DD_CXX: "aarch64-unknown-linux-gnu-g++"
+    # On armv7, dpkg is built as a 32bits application, which means
+    # we can only address 32 bits of memory, which is likely to OOM
+    # if we use too many compression threads or a too agressive level
+    FORCED_PACKAGE_COMPRESSION_LEVEL: 5
+
+# ----- Dogstats -----
 
 .dogstatsd_build_common:
   needs: ["go_mod_tidy_check", "go_deps"]
@@ -129,6 +151,14 @@ datadog-agent-7-arm64-fips:
   cache:
     - !reference [.cache_omnibus_ruby_deps, cache]
 
+dogstatsd-x64:
+  extends: [.dogstatsd_build_common, .toolchain-common-x64]
+
+dogstatsd-arm64:
+  extends: [.dogstatsd_build_common, .toolchain-common-arm64]
+
+# ----- DDOT -----
+
 .otel_build_common:
   needs: ["go_mod_tidy_check", "go_deps"]
   rules:
@@ -154,37 +184,14 @@ datadog-agent-7-arm64-fips:
   cache:
     - !reference [.cache_omnibus_ruby_deps, cache]
 
-iot-agent-x64:
-  extends: [.iot-agent-common, .iot-otel-statsd-x64]
-
-iot-agent-arm64:
-  extends: [.iot-agent-common, .iot-otel-statsd-arm64]
-
-iot-agent-armhf:
-  extends: .iot-agent-common
-  # Run with platform:arm64 since no platform:armhf exists and arm64 should be backwards compatible
-  tags: ["arch:arm64", "specific:true"]
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/rpm_armhf$CI_IMAGE_RPM_ARMHF_SUFFIX:$CI_IMAGE_RPM_ARMHF
-  variables:
-    # On armv7, dpkg is built as a 32bits application, which means
-    # we can only address 32 bits of memory, which is likely to OOM
-    # if we use too many compression threads or a too agressive level
-    FORCED_PACKAGE_COMPRESSION_LEVEL: 5
-
-dogstatsd-x64:
-  extends: [.dogstatsd_build_common, .iot-otel-statsd-x64]
-
-dogstatsd-arm64:
-  extends: [.dogstatsd_build_common, .iot-otel-statsd-arm64]
-
 datadog-otel-agent-x64:
-  extends: [.otel_build_common, .iot-otel-statsd-x64]
+  extends: [.otel_build_common, .toolchain-common-x64]
 
 datadog-otel-agent-arm64:
-  extends: [.otel_build_common, .iot-otel-statsd-arm64]
+  extends: [.otel_build_common, .toolchain-common-arm64]
 
 datadog-otel-agent-x64-fips:
-  extends: [.otel_build_common, .iot-otel-statsd-x64, .agent_fips_build]
+  extends: [.otel_build_common, .toolchain-common-x64, .agent_fips_build]
 
 datadog-otel-agent-arm64-fips:
-  extends: [.otel_build_common, .iot-otel-statsd-arm64, .agent_fips_build]
+  extends: [.otel_build_common, .toolchain-common-arm64, .agent_fips_build]
