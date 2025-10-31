@@ -242,7 +242,7 @@ def build(
 
     if not target_project:
         target_project = "agent"
-    if target_project != "agent" and flavor != AgentFlavor.base:
+    if flavor != AgentFlavor.base and target_project not in ["agent", "ddot"]:
         print("flavors only make sense when building the agent")
         raise Exit(code=1)
     if flavor.is_iot():
