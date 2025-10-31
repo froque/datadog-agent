@@ -90,32 +90,19 @@ datadog-agent-7-arm64-fips:
     - ls -la $OMNIBUS_PACKAGE_DIR
     - !reference [.upload_sbom_artifacts]
 
-iot-agent-x64:
-  extends: .iot-agent-common
+.iot-otel-statsd-x64:
   tags: ["arch:amd64", "specific:true"]
   image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
   variables:
     DD_CC: "x86_64-unknown-linux-gnu-gcc"
     DD_CXX: "x86_64-unknown-linux-gnu-g++"
 
-iot-agent-arm64:
-  extends: .iot-agent-common
+.iot-otel-statsd-arm64:
   tags: ["arch:arm64", "specific:true"]
   image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
   variables:
     DD_CC: "aarch64-unknown-linux-gnu-gcc"
     DD_CXX: "aarch64-unknown-linux-gnu-g++"
-
-iot-agent-armhf:
-  extends: .iot-agent-common
-  # Run with platform:arm64 since no platform:armhf exists and arm64 should be backwards compatible
-  tags: ["arch:arm64", "specific:true"]
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/rpm_armhf$CI_IMAGE_RPM_ARMHF_SUFFIX:$CI_IMAGE_RPM_ARMHF
-  variables:
-    # On armv7, dpkg is built as a 32bits application, which means
-    # we can only address 32 bits of memory, which is likely to OOM
-    # if we use too many compression threads or a too agressive level
-    FORCED_PACKAGE_COMPRESSION_LEVEL: 5
 
 .dogstatsd_build_common:
   needs: ["go_mod_tidy_check", "go_deps"]
@@ -142,22 +129,6 @@ iot-agent-armhf:
   cache:
     - !reference [.cache_omnibus_ruby_deps, cache]
 
-dogstatsd-x64:
-  extends: .dogstatsd_build_common
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
-  tags: ["arch:amd64", "specific:true"]
-  variables:
-    DD_CC: "x86_64-unknown-linux-gnu-gcc"
-    DD_CXX: "x86_64-unknown-linux-gnu-g++"
-
-dogstatsd-arm64:
-  extends: .dogstatsd_build_common
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
-  tags: ["arch:arm64", "specific:true"]
-  variables:
-    DD_CC: "aarch64-unknown-linux-gnu-gcc"
-    DD_CXX: "aarch64-unknown-linux-gnu-g++"
-
 .otel_build_common:
   needs: ["go_mod_tidy_check", "go_deps"]
   rules:
@@ -183,18 +154,31 @@ dogstatsd-arm64:
   cache:
     - !reference [.cache_omnibus_ruby_deps, cache]
 
-datadog-otel-agent-x64:
-  extends: .otel_build_common
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
-  tags: ["arch:amd64", "specific:true"]
+iot-agent-x64:
+  extends: [.iot-agent-common, .iot-otel-statsd-x64]
+
+iot-agent-arm64:
+  extends: [.iot-agent-common, .iot-otel-statsd-arm64]
+
+iot-agent-armhf:
+  extends: .iot-agent-common
+  # Run with platform:arm64 since no platform:armhf exists and arm64 should be backwards compatible
+  tags: ["arch:arm64", "specific:true"]
+  image: registry.ddbuild.io/ci/datadog-agent-buildimages/rpm_armhf$CI_IMAGE_RPM_ARMHF_SUFFIX:$CI_IMAGE_RPM_ARMHF
   variables:
-    DD_CC: "x86_64-unknown-linux-gnu-gcc"
-    DD_CXX: "x86_64-unknown-linux-gnu-g++"
+    # On armv7, dpkg is built as a 32bits application, which means
+    # we can only address 32 bits of memory, which is likely to OOM
+    # if we use too many compression threads or a too agressive level
+    FORCED_PACKAGE_COMPRESSION_LEVEL: 5
+
+dogstatsd-x64:
+  extends: [.dogstatsd_build_common, .iot-otel-statsd-x64]
+
+dogstatsd-arm64:
+  extends: [.dogstatsd_build_common, .iot-otel-statsd-arm64]
+
+datadog-otel-agent-x64:
+  extends: [.otel_build_common, .iot-otel-statsd-x64]
 
 datadog-otel-agent-arm64:
-  extends: .otel_build_common
-  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux$CI_IMAGE_LINUX_SUFFIX:$CI_IMAGE_LINUX
-  tags: ["arch:arm64", "specific:true"]
-  variables:
-    DD_CC: "aarch64-unknown-linux-gnu-gcc"
-    DD_CXX: "aarch64-unknown-linux-gnu-g++"
+  extends: [.otel_build_common, .iot-otel-statsd-arm64]
