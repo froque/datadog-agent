@@ -86,6 +86,8 @@ func ensureLocalhostSSHAuth() error {
 	home := u.HomeDir
 	sshDir := filepath.Join(home, ".ssh")
 	keyPath := filepath.Join(sshDir, "ci_localhost_ed25519")
+	// Print which file was created
+	fmt.Printf("Created key: %s\n", keyPath)
 	pubPath := keyPath + ".pub"
 	authz := filepath.Join(sshDir, "authorized_keys")
 
@@ -165,65 +167,6 @@ func sshLocalhostWithGeneratedKey(remoteCmd string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
-func TestSSHUserSession(t *testing.T) {
-	SkipIfNotAvailable(t)
-	if testEnvironment == DockerEnvironment {
-		t.Skip("Skip test spawning docker containers on docker")
-	}
-	currentUser, err := user.Current()
-	if err != nil {
-		t.Fatalf("failed to get current user: %v", err)
-	}
-
-	ruleDefs := []*rules.RuleDefinition{
-		{
-			ID:         "test_rule_ssh_user_session",
-			Expression: `process.user_session.id != 0 && process.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `"`,
-		},
-	}
-
-	test, err := newTestModule(t, nil, ruleDefs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer test.Close()
-
-	t.Run("ssh_then_pwd", func(t *testing.T) {
-		err := test.GetEventSent(t, func() error {
-			if err := ensureLocalhostSSHAuth(); err != nil {
-				fmt.Fprintf(os.Stderr, "setup ssh failed: %v\n", err)
-				return err
-			}
-			if err := sshLocalhostWithGeneratedKey("pwd"); err != nil {
-				fmt.Fprintf(os.Stderr, "ssh failed: %v\n", err)
-				return err
-			}
-			return nil
-		}, func(rule *rules.Rule, event *model.Event) bool {
-			return true
-		}, time.Second*3, "test_rule_ssh_user_session")
-
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = retry.Do(func() error {
-			msg := test.msgSender.getMsg("test_rule_ssh_user_session")
-			if msg == nil {
-				return errors.New("not found")
-			}
-			validateMessageSchema(t, string(msg.Data))
-
-			// Check all the fields
-			checkSSHUserSessionJSON(test, t, msg.Data, msg.Data)
-
-			return nil
-		}, retry.Delay(200*time.Millisecond), retry.Attempts(30), retry.DelayType(retry.FixedDelay))
-		assert.NoError(t, err)
-
-	})
-}
-
 func rotateAuthLog(logPath string) error {
 	st, err := os.Stat(logPath)
 	if err != nil {
@@ -264,7 +207,177 @@ func rotateAuthLog(logPath string) error {
 
 	return nil
 }
-func TestSSHUserSessionRotated(t *testing.T) {
+
+// cleanupSSHTestFiles removes SSH test artifacts created during tests
+func cleanupSSHTestFiles() error {
+	u, err := user.Current()
+	if err != nil {
+		return err
+	}
+
+	keyPath := filepath.Join(u.HomeDir, ".ssh", "ci_localhost_ed25519")
+	pubPath := keyPath + ".pub"
+
+	// Remove generated SSH keys
+	_ = os.Remove(keyPath)
+	_ = os.Remove(pubPath)
+
+	return nil
+}
+
+// removePublicKeyFromAuthorizedKeys removes the test public key from authorized_keys
+func removePublicKeyFromAuthorizedKeys() error {
+	u, err := user.Current()
+	if err != nil {
+		return err
+	}
+
+	authzPath := filepath.Join(u.HomeDir, ".ssh", "authorized_keys")
+	pubPath := filepath.Join(u.HomeDir, ".ssh", "ci_localhost_ed25519.pub")
+
+	// Read the public key to remove
+	pubKey, err := os.ReadFile(pubPath)
+	if err != nil {
+		return nil // Key doesn't exist, nothing to remove
+	}
+
+	// Read authorized_keys
+	authzContent, err := os.ReadFile(authzPath)
+	if err != nil {
+		return nil // File doesn't exist
+	}
+
+	// Remove the line containing our test key
+	lines := bytes.Split(authzContent, []byte("\n"))
+	var newLines [][]byte
+	for _, line := range lines {
+		if len(line) > 0 && !bytes.Contains(line, bytes.TrimSpace(pubKey)) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Write back the cleaned authorized_keys
+	return os.WriteFile(authzPath, bytes.Join(newLines, []byte("\n")), 0o600)
+}
+
+// restoreRotatedLog restores the rotated log file to its original location
+func restoreRotatedLog(logPath string) error {
+	rotatedPath := logPath + ".1"
+
+	// Check if rotated file exists
+	if _, err := os.Stat(rotatedPath); os.IsNotExist(err) {
+		return nil // Nothing to restore
+	}
+
+	// Remove the new empty log
+	_ = os.Remove(logPath)
+
+	// Rename .1 back to original
+	if err := os.Rename(rotatedPath, logPath); err != nil {
+		return fmt.Errorf("restore log: %w", err)
+	}
+
+	// Reload rsyslog
+	if err := exec.Command("systemctl", "reload", "rsyslog").Run(); err != nil {
+		_ = exec.Command("bash", "-c", "pidof rsyslogd >/dev/null 2>&1 && kill -HUP $(pidof rsyslogd)").Run()
+	}
+
+	return nil
+}
+
+func getLogFile() (bool, string, uint64) {
+	possibleLogPaths := []string{
+		"/var/log/auth.log", // Debian/Ubuntu
+		"/var/log/secure",   // RHEL/CentOS/Fedora
+		"/var/log/messages", // openSUSE/autres
+	}
+
+	var logPath string
+	var inodeBeforeRotate uint64
+
+	for _, path := range possibleLogPaths {
+		stat, err := os.Stat(path)
+		if err == nil {
+			logPath = path
+			// Get inode
+			if sysStat, ok := stat.Sys().(*syscall.Stat_t); ok {
+				inodeBeforeRotate = sysStat.Ino
+				return true, logPath, inodeBeforeRotate
+			}
+		}
+	}
+	return false, "", 0
+}
+func TestSSHUserSession(t *testing.T) {
+	SkipIfNotAvailable(t)
+	if testEnvironment == DockerEnvironment {
+		t.Skip("Skip test spawning docker containers on docker")
+	}
+	currentUser, err := user.Current()
+	if err != nil {
+		t.Fatalf("failed to get current user: %v", err)
+	}
+	// isLogFileExist, _, _ := getLogFile()
+	// We skip test when we don't have a log file because we don't use journalctl for now
+	// if !isLogFileExist {
+	// 	t.Skip("Skip test if log file does not exist")
+	// }
+
+	ruleDefs := []*rules.RuleDefinition{
+		{
+			ID:         "test_rule_ssh_user_session",
+			Expression: `process.user_session.id != 0 && process.user_session.session_type == ssh && exec.user == "` + currentUser.Username + `"`,
+		},
+	}
+
+	test, err := newTestModule(t, nil, ruleDefs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer test.Close()
+
+	// Cleanup SSH test artifacts after test completion
+	t.Cleanup(func() {
+		_ = removePublicKeyFromAuthorizedKeys()
+		_ = cleanupSSHTestFiles()
+	})
+
+	t.Run("ssh_then_pwd", func(t *testing.T) {
+		err := test.GetEventSent(t, func() error {
+			if err := ensureLocalhostSSHAuth(); err != nil {
+				fmt.Fprintf(os.Stderr, "setup ssh failed: %v\n", err)
+				return err
+			}
+			if err := sshLocalhostWithGeneratedKey("pwd"); err != nil {
+				fmt.Fprintf(os.Stderr, "ssh failed: %v\n", err)
+				return err
+			}
+			return nil
+		}, func(rule *rules.Rule, event *model.Event) bool {
+			return true
+		}, time.Second*3, "test_rule_ssh_user_session")
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = retry.Do(func() error {
+			msg := test.msgSender.getMsg("test_rule_ssh_user_session")
+			if msg == nil {
+				return errors.New("not found")
+			}
+			validateMessageSchema(t, string(msg.Data))
+
+			// Check all the fields
+			checkSSHUserSessionJSON(test, t, msg.Data, msg.Data)
+
+			return nil
+		}, retry.Delay(200*time.Millisecond), retry.Attempts(30), retry.DelayType(retry.FixedDelay))
+		assert.NoError(t, err)
+
+	})
+}
+
+func TestHUserSessionRotated(t *testing.T) {
 	SkipIfNotAvailable(t)
 	if testEnvironment == DockerEnvironment {
 		t.Skip("Skip test spawning docker containers on docker")
@@ -287,35 +400,25 @@ func TestSSHUserSessionRotated(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer test.Close()
+
 	if err := ensureLocalhostSSHAuth(); err != nil {
 		fmt.Fprintf(os.Stderr, "setup ssh failed: %v\n", err)
 		t.Fatal(err)
 	}
 
-	possibleLogPaths := []string{
-		"/var/log/auth.log", // Debian/Ubuntu
-		"/var/log/secure",   // RHEL/CentOS/Fedora
-		"/var/log/messages", // openSUSE/autres
+	isLogFileExist, logPath, inodeBeforeRotate := getLogFile()
+	// We skip test when we don't have a log file because we can't rotate it
+	if !isLogFileExist {
+		t.Skip("Skip test if log file does not exist")
 	}
 
-	var logPath string
-	var inodeBeforeRotate uint64
+	// Cleanup: restore log and remove SSH artifacts after test completion
+	t.Cleanup(func() {
+		_ = restoreRotatedLog(logPath)
+		_ = removePublicKeyFromAuthorizedKeys()
+		_ = cleanupSSHTestFiles()
+	})
 
-	for _, path := range possibleLogPaths {
-		stat, err := os.Stat(path)
-		if err == nil {
-			logPath = path
-			// Get inode
-			if sysStat, ok := stat.Sys().(*syscall.Stat_t); ok {
-				inodeBeforeRotate = sysStat.Ino
-				break
-			}
-		}
-	}
-
-	if logPath == "" {
-		t.Skip("No SSH log file found (/var/log/auth.log, /var/log/secure, or /var/log/messages)")
-	}
 	if err := rotateAuthLog(logPath); err != nil {
 		t.Fatalf("rotateAuthLog failed: %v", err)
 	}
