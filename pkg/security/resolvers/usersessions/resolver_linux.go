@@ -10,13 +10,11 @@ package usersessions
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +22,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
+	"github.com/coreos/go-systemd/v22/sdjournal"
 	"github.com/hashicorp/golang-lru/v2/simplelru"
 
 	manager "github.com/DataDog/ebpf-manager"
@@ -65,10 +64,11 @@ type incrementalFileReader struct {
 	offset             int64
 	mu                 sync.Mutex
 	ino                uint64
-	lastRead           time.Time
 	readFromJournalctl bool
 	// chan to stop journalctl
 	stopReading chan struct{} // make(chan struct{}, 1)
+	// journalctl cursor - points to the last read journal entry
+	journalCursor string
 }
 
 // SSHSessionKey describes the key to a ssh session in the LRU
@@ -209,7 +209,7 @@ func (ifr *incrementalFileReader) Init(f *os.File) error {
 func (r *Resolver) startReading() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
+	r.sshLogReader.readFromJournalctl = true
 	switch r.sshLogReader.readFromJournalctl {
 	case true:
 		for {
@@ -245,7 +245,7 @@ func (r *Resolver) startReading() {
 	}
 }
 
-func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, string) {
+func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) error {
 	type SSHLogLine struct {
 		Date      string
 		Hostname  string
@@ -264,7 +264,7 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 	words := strings.Fields(line)
 	sshLogLine := SSHLogLine{}
 	if len(words) < 5 {
-		return false, ""
+		return fmt.Errorf("not enough words in line\n")
 	}
 	switch {
 	// We saw two different types of logs, so we try to parse both
@@ -284,7 +284,7 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 			Remaining: strings.Join(words[5:], " "),
 		}
 	default:
-		return false, words[0]
+		return fmt.Errorf("can't find sshd")
 	}
 	// if the service is "sshd" and the line starts with "Accepted" it's the beginning of an ssh session
 	if strings.HasPrefix(sshLogLine.Service, "sshd") && strings.HasPrefix(sshLogLine.Remaining, "Accepted") {
@@ -293,7 +293,7 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 
 		sshWords := strings.Split(sshLogLine.Remaining, " ")
 		if len(sshWords) < 9 {
-			return false, sshLogLine.Date
+			return fmt.Errorf("not enough words in line\n")
 		}
 		sshParsedLine := SSHParsedLine{
 			AuthentificationMethod: sshWords[1],
@@ -334,9 +334,9 @@ func parseSSHLogLine(line string, sshSessionParsed *sshSessionParsed) (bool, str
 
 		sshSessionParsed.Lru.Add(key, value)
 		sshSessionParsed.Mu.Unlock()
-		return true, sshLogLine.Date
+		return nil
 	}
-	return false, sshLogLine.Date
+	return fmt.Errorf("not an ssh session log line")
 }
 
 // resolveFromLogFile read all the lines that have been added since the last call without reopening the file.
@@ -383,36 +383,111 @@ func (ifr *incrementalFileReader) resolveFromLogFile(sshSessionParsed *sshSessio
 
 // Lock ifr.mu
 func (ifr *incrementalFileReader) resolveFromJournalctl(sshSessionParsed *sshSessionParsed) error {
-	// format for journalctl
-	sinceStr := ifr.lastRead.Format("2006-01-02 15:04:05")
-
-	cmd := exec.Command("journalctl", "--no-pager", "--since", sinceStr, "--output=short-iso")
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
-		seclog.Errorf("failed to read journalctl: %v", err)
+	// Open the systemd journal
+	journal, err := sdjournal.NewJournal()
+	if err != nil {
+		seclog.Errorf("failed to open systemd journal: %v", err)
 		return err
 	}
+	defer journal.Close()
 
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	// Add multiple match patterns to be permissive - these will be OR'ed
+	// Try different ways sshd might appear in the journal
+	journal.AddMatch("SYSLOG_IDENTIFIER=sshd")
+	journal.AddDisjunction()
+	journal.AddMatch("_SYSTEMD_UNIT=sshd.service")
+	journal.AddDisjunction()
+	journal.AddMatch("_COMM=sshd")
+	// Seek using cursor if we have one, otherwise start from beginning
+	if ifr.journalCursor != "" {
+		if err := journal.SeekCursor(ifr.journalCursor); err != nil {
+			seclog.Warnf("failed to seek to cursor %s: %v, will start from beginning", ifr.journalCursor, err)
+			// Cursor invalid (maybe journal was rotated), start from beginning
+			if err := journal.SeekHead(); err != nil {
+				seclog.Errorf("failed to seek to head: %v", err)
+				return err
+			}
+		} else {
+			// We skip the first entry because it's the one we already processed
+			_, err := journal.Next()
+			if err != nil {
+				seclog.Warnf("failed to skip first entry: %v", err)
+				return err
+			}
+		}
+	} else {
+		// No cursor yet, start from the beginning
+		if err := journal.SeekHead(); err != nil {
+			seclog.Warnf("failed to seek to head: %v", err)
+		}
+	}
 
-	var lastDate string
-	for i := 0; i < len(lines); i++ {
-		_, lastDate = parseSSHLogLine(lines[i], sshSessionParsed)
+	linesProcessed := 0
+	maxLinesToProcess := 10000 // Limit to avoid infinite loop
+
+	// Iterate through journal entries
+	for linesProcessed < maxLinesToProcess {
+		n, err := journal.Next()
+		if err != nil {
+			seclog.Warnf("error iterating journal (processed %d lines): %v", linesProcessed, err)
+			break // Don't fail completely, just stop reading
+		}
+		if n == 0 {
+			break
+		}
+
+		linesProcessed++
+
+		entry, err := journal.GetEntry()
+		if err != nil {
+			// Continue on error, don't fail the whole process
+			seclog.Warnf("failed to get journal entry: %v", err)
+			continue
+		}
+
+		timestamp := time.Unix(0, int64(entry.RealtimeTimestamp)*1000)
+
+		message := entry.Fields["MESSAGE"]
+		if message == "" {
+			continue
+		}
+
+		// Reconstruct a log line in the format expected by parseSSHLogLine
+		hostname := entry.Fields["_HOSTNAME"]
+		if hostname == "" {
+			hostname = "localhost"
+		}
+		pid := entry.Fields["_PID"]
+		if pid == "" {
+			pid = "0"
+		}
+
+		// Format the line to match what parseSSHLogLine expects
+		dateStr := timestamp.Format("2006-01-02T15:04:05-0700")
+		// Build log line
+		line := fmt.Sprintf("%s %s sshd[%s]: %s",
+			dateStr,
+			hostname,
+			pid,
+			message,
+		)
+
+		// Parse the SSH log line
+		err = parseSSHLogLine(line, sshSessionParsed)
+		if err != nil {
+			// Not an SSH session line, skip
+			continue
+		}
 	}
-	if lastDate == "" {
-		return nil
-	}
-	// We update the lastRead like this to avoid skipping another line that could be another ssh session
-	parsedSince, err := time.Parse("2006-01-02T15:04:05-0700", lastDate)
+	// Capture the final cursor position
+	lastCursor, err := journal.GetCursor()
 	if err != nil {
-		seclog.Errorf("failed to parse date from journalctl: %v", err)
+		seclog.Debugf("failed to get final cursor: %v", err)
 	}
-	ifr.lastRead = parsedSince
-	return nil
+	// Save cursor to avoid re-reading these entries
+	ifr.journalCursor = lastCursor
 
+	return nil
 }
 
 // close closes the file.
@@ -501,9 +576,8 @@ func (r *Resolver) StartSSHUserSessionResolver() error {
 	// If there is no log file, we use journalctl (atm we do nothing)
 	if path == "" {
 		// // Don't want to continue in case there is no log file, use journalctl instead
-		// r.sshLogReader.lastRead = time.Now()
-		// r.sshLogReader.readFromJournalctl = true
-		// go r.startReading()
+		r.sshLogReader.readFromJournalctl = true
+		go r.startReading()
 		return nil
 	}
 
